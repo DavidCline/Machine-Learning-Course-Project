@@ -1,0 +1,127 @@
+---
+title: "Machine Learning Course Project: Writeup"
+author: "David Cline"
+date: "Thursday, November 20, 2014"
+output: html_document
+---
+This writeup documents the creation of my machine learning model
+to classify weightlifting activity according to its quality.
+I was able to build a model with the partial least squares
+discriminant analysis algorithm that turned out to have fairly
+good predictive capability.
+
+## Reading the Data
+
+```{r}
+trainData <- read.csv("pml-training.csv",stringsAsFactors=FALSE)
+testing <- read.csv("pml-testing.csv",stringsAsFactors=FALSE)
+```
+
+## Pre-Processing the Data
+
+I took steps to deal with problems and inconsistencies in the
+dataset, attempting to move it closer to the neat and tidy
+ideal.
+
+First I removed features that are not activity measurements
+and enforced consistent class types across both the training
+and test case datasets.
+
+```{r}
+colnames(testing)[160] <- "classe"
+combinedData <- rbind(trainData,testing)
+dim(combinedData)
+combinedData$X <- NULL
+combinedData$user_name <- NULL
+combinedData$raw_timestamp_part_1 <- NULL
+combinedData$raw_timestamp_part_2 <- NULL
+combinedData$cvtd_timestamp <- NULL
+combinedData$num_window <- NULL
+dim(combinedData)
+combinedData[,1:153] <- as.numeric(unlist(combinedData[,1:153]))
+combinedData$classe <- as.factor(combinedData$classe)
+```
+
+I then removed columns with Near Zero Variance (requiring the
+caret package) and also those that were dominated by "NA"
+values reflecting missing data. This resulted in a much more
+tractable data environment.
+
+```{r}
+library(caret)
+nzv <- nearZeroVar(combinedData)
+filteredData <- combinedData[, -nzv]
+
+filteredData <- filteredData[,apply(filteredData,2,
+                    function(x) !any(is.na(x)))]
+
+testing <- filteredData[19623:19642,]
+trainData <- filteredData[1:19622,]
+```
+
+## Cross-Validation
+
+I decided to use the caret package's implentation of
+the partial least squares discriminant analysis (PLS)
+model.  With the caret package loaded, cross validation
+procedures began with caret's data splitting routine
+with randomization provided by the default bootstrap
+method in the createDataPartition function.
+
+```{r}
+set.seed(1234)
+inTrain <- createDataPartition(y=trainData$classe,
+                              p=0.70, list=FALSE)
+training <- trainData[inTrain,]
+validating <- trainData[-inTrain,]
+```
+
+Now we have three datasets: a large sample set for training
+the pls model, a smaller set (named "validating") for out of sample testing, and finally the set of 20 test cases for prediction
+to complete the course project.
+
+## Model Training and Tuning
+
+Following the procedure provided by the caret package author
+in his recent tutorial ("A Short Introduction to the
+caret Package", Max Kuhn, November 10 2014) I replaced
+the default bootstrap method of resampling for model tuning
+with K-fold cross validation and augmented number of PLS
+models to 35.  I fitted the model and plotted the resulting
+accuracy.
+
+```{r}
+ctrl <- trainControl(method="repeatedcv",repeats=3)
+set.seed(5678)
+modFit <- train(classe ~ .,data=training,
+        method="pls",
+        tuneLength=35,
+        trControl=ctrl,
+        preProc = c("center", "scale"))
+plot(modFit)
+```
+
+The plot show increasing accuracy as throughout the range
+of 35 models but is becoming nearly asymptotic at that
+point, indicating little further improvement available
+in this model type for the dataset in its current state.
+
+## Out of Sample Error Estimation
+
+I predicted the quality class on the out of sample testing
+set ("validating") and ran the Confusion Matrix function
+built into caret.  This provides us with and expected
+accuracy of 69.1%, in a 95% Confidence Interval ranging
+from 67.9% to 70.3%.  This forms our expectation of
+how well the model would predict the activity quality
+classes in the set of 20 test cases.
+
+```{r}
+modClasses <- predict(modFit,newdata=validating)
+confusionMatrix(data=modClasses,validating$classe)
+```
+
+
+
+
+
